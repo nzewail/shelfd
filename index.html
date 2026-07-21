@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Shelfd — A modern, cozy reading tracker. Track your books, reading habits, and stats with a beautiful dark interface.">
+  <meta name="theme-color" content="#1a1614">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Shelfd">
+  
+  <title>Shelfd — Your Reading Tracker</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== Library View ===== -->
+    <section id="view-library" class="view active" data-view="library">
+      <div class="view-header">
+        <h2 class="view-title">My Library</h2>
+        <div class="view-actions">
+          <button id="btn-view-mode" class="btn-icon" aria-label="Toggle grid size" title="Change layout view">
+            <span class="icon" id="view-mode-icon">⊞</span>
+          </button>
+          <button id="btn-sort" class="btn-icon" aria-label="Sort books" title="Sort books">
+            <span class="icon">↕️</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Filter Bar -->
+      <div id="filter-bar" class="filter-bar">
+        <button class="filter-pill pill active" data-filter="all">All</button>
+        <button class="filter-pill pill" data-filter="reading">📖 Reading</button>
+        <button class="filter-pill pill" data-filter="want-to-read">✨ Want to Read</button>
+        <button class="filter-pill pill" data-filter="finished">✅ Finished</button>
+        <button class="filter-pill pill" data-filter="dnf">🚫 DNF</button>
+      </div>
+
+      <!-- View Layout Dropdown -->
+      <div id="view-dropdown" class="sort-dropdown hidden" style="right: 64px;">
+        <button class="sort-option" data-view-mode="standard">⊞ Standard Grid</button>
+        <button class="sort-option" data-view-mode="compact">⣿ Compact Grid</button>
+        <button class="sort-option" data-view-mode="large">🖼️ Large Grid</button>
+        <button class="sort-option" data-view-mode="list">☰ List View</button>
+      </div>
+
+      <!-- Sort Dropdown -->
+      <div id="sort-dropdown" class="sort-dropdown hidden">
+        <button class="sort-option active" data-sort="dateAdded-desc">Recently Added</button>
+        <button class="sort-option" data-sort="title-asc">Title A → Z</button>
+        <button class="sort-option" data-sort="title-desc">Title Z → A</button>
+        <button class="sort-option" data-sort="author-asc">Author A → Z</button>
+      </div>
+
+      <!-- Book Grid -->
+      <div id="book-grid" class="book-grid">
+        <!-- Books rendered by JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="empty-library" class="empty-state hidden">
+        <div class="empty-icon">📖</div>
+        <h3 class="empty-title">Your shelf is empty</h3>
+        <p class="empty-text">Search for books to start building your library</p>
+        <button class="btn btn-primary" id="btn-empty-search">Search Books</button>
+      </div>
+    </section>
+
+    <!-- ===== Search View ===== -->
+    <section id="view-search" class="view" data-view="search">
+      <div class="view-header">
+        <h2 class="view-title">Find Books</h2>
+      </div>
+      
+      <div class="search-bar-container">
+        <span class="search-icon">🔍</span>
+        <input 
+          type="search" 
+          id="search-input" 
+          class="search-input" 
+          placeholder="Search by title or author..." 
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <button id="search-clear" class="search-clear hidden" aria-label="Clear search">✕</button>
+      </div>
+
+      <!-- Search Results -->
+      <div id="search-results" class="search-results">
+        <!-- Results rendered by JS -->
+      </div>
+
+      <!-- Search Loading -->
+      <div id="search-loading" class="search-loading hidden">
+        <div class="spinner"></div>
+        <p>Searching books...</p>
+      </div>
+
+      <!-- Search Empty State -->
+      <div id="search-empty" class="empty-state">
+        <div class="empty-icon">🔎</div>
+        <h3 class="empty-title">Discover your next read</h3>
+        <p class="empty-text">Search by book title or author name</p>
+      </div>
+
+      <!-- No Results -->
+      <div id="search-no-results" class="empty-state hidden">
+        <div class="empty-icon">😔</div>
+        <h3 class="empty-title">No books found</h3>
+        <p class="empty-text">Try a different search term</p>
+      </div>
+    </section>
+
+    <!-- ===== Stats View ===== -->
+    <section id="view-stats" class="view" data-view="stats">
+      <div class="view-header">
+        <h2 class="view-title">Reading Stats</h2>
+      </div>
+
+      <!-- Year Selector -->
+      <div class="stats-year-selector">
+        <button id="stats-year-prev" class="btn-icon" aria-label="Previous year">◀</button>
+        <span id="stats-year-label" class="stats-year-label"></span>
+        <button id="stats-year-next" class="btn-icon" aria-label="Next year">▶</button>
+      </div>
+
+      <!-- Goal Progress -->
+      <div id="stats-goal" class="stats-goal-card">
+        <div class="progress-ring-container">
+          <svg class="progress-ring" viewBox="0 0 120 120">
+            <circle class="progress-ring-circle-bg" cx="60" cy="60" r="52" />
+            <circle id="goal-ring-progress" class="progress-ring-circle" cx="60" cy="60" r="52" />
+          </svg>
+          <div class="progress-ring-text">
+            <span id="goal-count" class="progress-ring-percentage">0</span>
+            <span class="goal-label" style="display:block;font-size:var(--text-sm);color:var(--text-secondary);">of <span id="goal-total">12</span></span>
+          </div>
+        </div>
+        <div class="goal-info" style="text-align:center;margin-top:var(--space-2);">
+          <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-1);">Yearly Goal</h3>
+          <p id="goal-message" class="goal-message" style="color:var(--text-secondary);font-size:var(--text-sm);margin:0;">Keep reading!</p>
+        </div>
+      </div>
+
+      <!-- Quick Stats Grid -->
+      <div id="stats-grid" class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-total-books">0</span>
+          <span class="stat-label">Total Books</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-year-books">0</span>
+          <span class="stat-label">Finished This Year</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-month-books">0</span>
+          <span class="stat-label">Finished This Month</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-total-pages">0</span>
+          <span class="stat-label">Pages Read</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-avg-days">—</span>
+          <span class="stat-label">Avg Days to Finish</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-dnf-books" style="color:var(--status-dnf);">0</span>
+          <span class="stat-label">DNF Books</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:var(--text-xl);">
+            <span id="stat-liked">0</span> 👍
+            <span style="color:var(--text-tertiary);">·</span>
+            <span id="stat-disliked">0</span> 👎
+          </div>
+          <span class="stat-label">Ratings</span>
+        </div>
+      </div>
+
+      <!-- Monthly Chart -->
+      <div class="stats-section chart-container">
+        <h3 class="stats-section-title" style="font-size:var(--text-lg);margin-bottom:0;">Books Per Month</h3>
+        <div id="monthly-chart" class="monthly-chart">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Format Breakdown -->
+      <div class="stats-section chart-container">
+        <h3 class="stats-section-title" style="font-size:var(--text-lg);margin-bottom:var(--space-4);">Reading Formats</h3>
+        <div id="format-breakdown" class="format-breakdown">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Genre Breakdown -->
+      <div class="stats-section chart-container">
+        <h3 class="stats-section-title" style="font-size:var(--text-lg);margin-bottom:var(--space-4);">Top Genres</h3>
+        <div id="genre-breakdown" class="genre-breakdown">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Page Count Breakdown -->
+      <div class="stats-section chart-container">
+        <h3 class="stats-section-title" style="font-size:var(--text-lg);margin-bottom:var(--space-4);">Book Length (Finished)</h3>
+        <div id="pages-breakdown" class="pages-breakdown">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Stats Empty State -->
+      <div id="stats-empty" class="empty-state hidden">
+        <div class="empty-icon">📊</div>
+        <h3 class="empty-title">No stats yet</h3>
+        <p class="empty-text">Start adding books to see your reading stats</p>
+      </div>
+    </section>
+
+    <!-- ===== Settings View ===== -->
+    <section id="view-settings" class="view" data-view="settings">
+      <div class="view-header">
+        <h2 class="view-title">Settings</h2>
+      </div>
+
+      <div class="settings-section">
+        <!-- Reading Goal -->
+        <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-3);">Reading Goal</h3>
+        <div class="settings-group">
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-title">Yearly book goal</span>
+              <span class="settings-desc">How many books do you want to read this year?</span>
+            </div>
+            <input type="number" id="setting-yearly-goal" class="input-field" min="1" max="365" value="12" style="width:80px;text-align:center;">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <!-- Data Management -->
+        <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-3);">Your Data</h3>
+        <div class="settings-group">
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-title">Export library</span>
+              <span class="settings-desc">Download your data as a JSON file</span>
+            </div>
+            <button id="btn-export" class="btn btn-secondary">Export</button>
+          </div>
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-title">Import library</span>
+              <span class="settings-desc">Restore from a JSON backup file</span>
+            </div>
+            <button id="btn-import" class="btn btn-secondary">Import</button>
+            <input type="file" id="import-file-input" accept=".json" class="hidden">
+          </div>
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-title">Clear all data</span>
+              <span class="settings-desc">Permanently delete all books and settings</span>
+            </div>
+            <button id="btn-clear-data" class="btn" style="color:var(--status-dnf);border:1px solid var(--status-dnf-bg);">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <!-- About -->
+        <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-3);">About</h3>
+        <div class="settings-group">
+          <div class="settings-item">
+            <div class="settings-info">
+              <span class="settings-title">Shelfd</span>
+              <span class="settings-desc">Version 1.0.0 · Made with ☕ and 📚</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Bottom Navigation ===== -->
+    <nav id="nav" class="nav-bar">
+      <button class="nav-item nav-tab active" data-view="library" aria-label="Library">
+        <span class="icon">📚</span>
+        <span class="label">Library</span>
+      </button>
+      <button class="nav-item nav-tab" data-view="search" aria-label="Search">
+        <span class="icon">🔍</span>
+        <span class="label">Search</span>
+      </button>
+      <button class="nav-item nav-tab" data-view="stats" aria-label="Stats">
+        <span class="icon">📊</span>
+        <span class="label">Stats</span>
+      </button>
+      <button class="nav-item nav-tab" data-view="settings" aria-label="Settings">
+        <span class="icon">⚙️</span>
+        <span class="label">Settings</span>
+      </button>
+    </nav>
+
+    <!-- ===== Modal Overlay ===== -->
+    <div id="modal-overlay" class="overlay hidden">
+      <div id="modal-content" class="modal">
+        <!-- Dynamic modal content rendered by JS -->
+      </div>
+    </div>
+
+    <!-- ===== Toast Container ===== -->
+    <div id="toast-container" class="toast-container"></div>
+
+  </div>
+
+  <!-- Service Worker Registration & App Script -->
+  <script src="app.js?v=18"></script>
+</body>
+</html>

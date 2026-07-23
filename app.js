@@ -32,6 +32,9 @@ const bookStore = (() => {
 
   const saveData = (data) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (window.firebaseSync) {
+      firebaseSync.pushLocalData();
+    }
   };
 
   const generateId = () => {
@@ -39,6 +42,9 @@ const bookStore = (() => {
   };
 
   return {
+    getData,
+    saveData,
+
     getBooks: () => getData().books,
 
     getBook: (id) => getData().books.find(b => b.id === id) || null,
@@ -103,9 +109,144 @@ const bookStore = (() => {
 
     clearAll: () => {
       localStorage.removeItem(STORAGE_KEY);
+      if (window.firebaseSync) {
+        firebaseSync.pushLocalData();
+      }
     },
 
     generateId
+  };
+})();
+
+// ============================================================================
+// 1.5 FIREBASE CLOUD SYNC MODULE
+// ============================================================================
+const firebaseSync = (() => {
+  const firebaseConfig = {
+    apiKey: "AIzaSyCi0h7nAJzv3Ur_B69c3I098h1sqoflhCA",
+    authDomain: "shelfd-books.firebaseapp.com",
+    databaseURL: "https://shelfd-books-default-rtdb.firebaseio.com",
+    projectId: "shelfd-books",
+    storageBucket: "shelfd-books.firebasestorage.app",
+    messagingSenderId: "1058754098224",
+    appId: "1:1058754098224:web:04c52af9d662cf2a0de9f5",
+    measurementId: "G-Y449YG1KG8"
+  };
+
+  let db = null;
+  let currentSyncRef = null;
+  let isInternalOperation = false;
+
+  const sanitizeSyncKey = (key) => {
+    return (key || 'my-library').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-');
+  };
+
+  const getSyncKey = () => {
+    return localStorage.getItem('shelfd_sync_key') || 'my-library';
+  };
+
+  const setSyncKey = (key) => {
+    const clean = sanitizeSyncKey(key);
+    localStorage.setItem('shelfd_sync_key', clean);
+    connect(clean);
+    return clean;
+  };
+
+  const init = () => {
+    try {
+      if (window.firebase) {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.database();
+        const syncKey = getSyncKey();
+        connect(syncKey);
+      }
+    } catch (e) {
+      console.warn('Firebase init warning:', e);
+    }
+  };
+
+  const connect = (syncKey) => {
+    if (!db) return;
+    if (currentSyncRef) {
+      currentSyncRef.off();
+    }
+
+    const cleanKey = sanitizeSyncKey(syncKey);
+    currentSyncRef = db.ref('libraries/' + cleanKey);
+
+    // Real-time listener for multi-device sync
+    currentSyncRef.on('value', (snapshot) => {
+      const val = snapshot.val();
+      if (val && Array.isArray(val.books)) {
+        const localData = bookStore.getData();
+        if (JSON.stringify(localData.books) !== JSON.stringify(val.books)) {
+          isInternalOperation = true;
+          bookStore.saveData({
+            books: val.books,
+            settings: { ...localData.settings, ...(val.settings || {}) }
+          });
+          isInternalOperation = false;
+
+          // Re-render active view
+          if (window.router) {
+            const view = router.getCurrent();
+            if (view === 'library') ui.renderLibrary();
+            if (view === 'stats') ui.renderStats();
+            if (view === 'settings') ui.renderSettings();
+          }
+        }
+      } else if (!val) {
+        // First time initialization for new sync key: push current local data to cloud
+        pushLocalData();
+      }
+      updateStatusUI(true);
+    }, (error) => {
+      console.warn('Firebase sync error:', error);
+      updateStatusUI(false);
+    });
+  };
+
+  const pushLocalData = () => {
+    if (!db || isInternalOperation) return;
+    const cleanKey = sanitizeSyncKey(getSyncKey());
+    const data = bookStore.getData();
+    isInternalOperation = true;
+    db.ref('libraries/' + cleanKey).set({
+      books: data.books,
+      settings: data.settings,
+      lastUpdated: new Date().toISOString()
+    }).then(() => {
+      isInternalOperation = false;
+      updateStatusUI(true);
+    }).catch(err => {
+      isInternalOperation = false;
+      console.warn('Firebase push failed:', err);
+      updateStatusUI(false);
+    });
+  };
+
+  const updateStatusUI = (connected) => {
+    const ind = document.getElementById('sync-indicator');
+    const txt = document.getElementById('sync-status-text');
+    if (ind && txt) {
+      if (connected) {
+        ind.textContent = '🟢';
+        txt.textContent = `Connected & Synced (${getSyncKey()})`;
+      } else {
+        ind.textContent = '🟡';
+        txt.textContent = 'Offline (local storage only)';
+      }
+    }
+  };
+
+  return {
+    init,
+    getSyncKey,
+    setSyncKey,
+    pushLocalData,
+    updateStatusUI
   };
 })();
 
@@ -1338,7 +1479,14 @@ const ui = (() => {
   // ---- Settings Rendering ----
   const renderSettings = () => {
     const settings = bookStore.getSettings();
-    document.getElementById('setting-yearly-goal').value = settings.yearlyGoal || 12;
+    const yearlyGoalInput = document.getElementById('setting-yearly-goal');
+    if (yearlyGoalInput) yearlyGoalInput.value = settings.yearlyGoal || 12;
+
+    const syncKeyInput = document.getElementById('setting-sync-key');
+    if (syncKeyInput && window.firebaseSync) {
+      syncKeyInput.value = firebaseSync.getSyncKey();
+      firebaseSync.updateStatusUI(true);
+    }
   };
 
   // ---- Public API ----
@@ -1438,71 +1586,90 @@ const initEventHandlers = () => {
   const searchInput = document.getElementById('search-input');
   const searchClear = document.getElementById('search-clear');
 
-  searchInput.addEventListener('input', (e) => {
-    const query = e.target.value.trim();
-    searchClear.classList.toggle('hidden', !query);
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      searchClear.classList.toggle('hidden', query.length === 0);
 
-    if (!query) {
-      ui.resetSearchView();
-      return;
-    }
+      clearTimeout(searchTimeout);
+      if (query.length < 2) {
+        ui.resetSearchView();
+        return;
+      }
 
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(async () => {
       ui.showSearchLoading();
-      try {
-        lastSearchResults = await bookAPI.searchBooks(query);
-        ui.renderSearchResults(lastSearchResults);
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          toast.show('Search failed. Check your connection.', 'error');
+      searchTimeout = setTimeout(async () => {
+        try {
+          lastSearchResults = await bookAPI.searchBooks(query);
+          ui.renderSearchResults(lastSearchResults);
+        } catch {
+          toast.show('Failed to search books. Please check your connection.', 'error');
           ui.resetSearchView();
         }
-      }
-    }, 400);
-  });
+      }, 400);
+    });
+  }
 
-  searchClear.addEventListener('click', () => {
-    searchInput.value = '';
-    searchClear.classList.add('hidden');
-    ui.resetSearchView();
-    searchInput.focus();
-  });
+  if (searchClear) {
+    searchClear.addEventListener('click', () => {
+      searchInput.value = '';
+      searchClear.classList.add('hidden');
+      ui.resetSearchView();
+      searchInput.focus();
+    });
+  }
 
-  // ---- Search Result Clicks ----
+  // ---- Search Results Click ----
   document.getElementById('search-results').addEventListener('click', (e) => {
-    const item = e.target.closest('.search-result-item');
-    if (item) {
-      const idx = parseInt(item.dataset.searchIndex);
-      if (lastSearchResults[idx]) {
-        ui.showAddBookModal(lastSearchResults[idx]);
-      }
+    const card = e.target.closest('.search-result-card');
+    if (card) {
+      const idx = parseInt(card.dataset.resultIndex, 10);
+      const result = lastSearchResults[idx];
+      if (result) ui.showAddBookModal(result);
     }
   });
 
-  // ---- Empty State Search Button ----
+  // ---- Floating Add Button ----
+  document.getElementById('btn-add-book').addEventListener('click', () => {
+    ui.showAddBookModal();
+  });
+
   document.getElementById('btn-empty-search').addEventListener('click', () => {
     router.navigate('search');
-    setTimeout(() => document.getElementById('search-input').focus(), 100);
   });
 
-  // ---- Settings ----
+  // ---- Settings Handlers ----
   document.getElementById('setting-yearly-goal').addEventListener('change', (e) => {
-    const val = parseInt(e.target.value) || 12;
-    bookStore.updateSettings({ yearlyGoal: Math.max(1, Math.min(365, val)) });
-    toast.show('Reading goal updated!', 'success');
+    const val = parseInt(e.target.value, 10);
+    if (val > 0) {
+      bookStore.updateSettings({ yearlyGoal: val });
+      toast.show('Yearly goal updated', 'success');
+    }
   });
+
+  // ---- Sync Passphrase Save ----
+  const btnSaveSyncKey = document.getElementById('btn-save-sync-key');
+  if (btnSaveSyncKey) {
+    btnSaveSyncKey.addEventListener('click', () => {
+      const input = document.getElementById('setting-sync-key');
+      if (input && input.value.trim()) {
+        const cleanKey = firebaseSync.setSyncKey(input.value);
+        input.value = cleanKey;
+        toast.show(`Connected to sync key "${cleanKey}"`, 'success');
+      }
+    });
+  }
 
   document.getElementById('btn-export').addEventListener('click', () => {
-    const data = bookStore.exportData();
-    const blob = new Blob([data], { type: 'application/json' });
+    const jsonStr = bookStore.exportData();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `shelfd-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.show('Data exported!', 'success');
+    toast.show('Library exported successfully', 'success');
   });
 
   document.getElementById('btn-import').addEventListener('click', () => {
@@ -1514,27 +1681,13 @@ const initEventHandlers = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = (evt) => {
       try {
-        const text = ev.target.result;
-        // Validate first
-        JSON.parse(text);
-        ui.showConfirmModal(
-          'Import Data?',
-          'This will replace all your current books and settings.',
-          () => {
-            try {
-              bookStore.importData(text);
-              modal.hide();
-              toast.show('Data imported successfully!', 'success');
-              ui.renderLibrary();
-            } catch (err) {
-              toast.show('Import failed: Invalid data format', 'error');
-            }
-          }
-        );
-      } catch {
-        toast.show('Invalid JSON file', 'error');
+        bookStore.importData(evt.target.result);
+        toast.show('Library imported successfully', 'success');
+        ui.renderLibrary();
+      } catch (err) {
+        toast.show(err.message || 'Failed to import library', 'error');
       }
     };
     reader.readAsText(file);
@@ -1579,5 +1732,6 @@ const registerServiceWorker = async () => {
 document.addEventListener('DOMContentLoaded', () => {
   initEventHandlers();
   router.init();
+  if (window.firebaseSync) firebaseSync.init();
   registerServiceWorker();
 });

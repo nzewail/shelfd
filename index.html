@@ -253,6 +253,26 @@
       </div>
 
       <div class="settings-section">
+        <!-- Cloud Sync -->
+        <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-3);">Cloud Sync & Devices</h3>
+        <div class="settings-group">
+          <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:var(--space-3);">
+            <div class="settings-info">
+              <span class="settings-title">Sync Passphrase</span>
+              <span class="settings-desc">Enter the same passphrase on all your devices to keep your library synced in real time.</span>
+            </div>
+            <div style="display:flex;gap:var(--space-2);">
+              <input type="text" id="setting-sync-key" class="input-field" placeholder="e.g. nabeel-reading" style="flex:1;">
+              <button id="btn-save-sync-key" class="btn btn-primary">Connect</button>
+            </div>
+            <div id="sync-status" style="font-size:var(--text-xs);color:var(--text-secondary);display:flex;align-items:center;gap:var(--space-2);">
+              <span id="sync-indicator">🟢</span> <span id="sync-status-text">Connected & Synced</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <!-- Data Management -->
         <h3 style="font-size:var(--text-lg);margin-bottom:var(--space-3);">Your Data</h3>
         <div class="settings-group">
@@ -327,7 +347,10 @@
 
   </div>
 
-  <!-- Service Worker Registration & App Script -->
-  <script src="app.js?v=18"></script>
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <!-- App Script -->
+  <script src="app.js?v=19"></script>
 </body>
 </html>

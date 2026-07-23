@@ -1656,27 +1656,19 @@ const initEventHandlers = () => {
     btnSaveSyncKey.addEventListener('click', () => {
       const input = document.getElementById('setting-sync-key');
       if (input && input.value.trim()) {
-        btnSaveSyncKey.disabled = true;
-        btnSaveSyncKey.innerHTML = '⏳ Connecting...';
-
         const cleanKey = firebaseSync.setSyncKey(input.value);
         input.value = cleanKey;
 
+        // Instant visual feedback
+        btnSaveSyncKey.classList.add('btn-success');
+        btnSaveSyncKey.innerHTML = '✓ Connected!';
+        toast.show(`Successfully synced to key "${cleanKey}"!`, 'success');
+        firebaseSync.updateStatusUI(true, `Connected & Synced (${cleanKey})`);
+
         setTimeout(() => {
-          btnSaveSyncKey.disabled = false;
-          btnSaveSyncKey.innerHTML = '✓ Connected!';
-          btnSaveSyncKey.style.backgroundColor = 'var(--status-finished)';
-          btnSaveSyncKey.style.borderColor = 'var(--status-finished)';
-
-          toast.show(`Successfully synced to key "${cleanKey}"!`, 'success');
-          firebaseSync.updateStatusUI(true, `Connected & Synced (${cleanKey})`);
-
-          setTimeout(() => {
-            btnSaveSyncKey.innerHTML = 'Connect';
-            btnSaveSyncKey.style.backgroundColor = '';
-            btnSaveSyncKey.style.borderColor = '';
-          }, 2500);
-        }, 300);
+          btnSaveSyncKey.classList.remove('btn-success');
+          btnSaveSyncKey.innerHTML = 'Connect';
+        }, 2500);
       } else {
         toast.show('Please enter a sync passphrase', 'error');
       }

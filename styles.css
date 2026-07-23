@@ -530,6 +530,12 @@ main.content-area {
   box-shadow: var(--shadow-glow);
 }
 
+.btn-success {
+  background-color: var(--status-finished) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(125, 155, 118, 0.5) !important;
+}
+
 .btn-secondary {
   background-color: var(--bg-elevated);
   color: var(--text-primary);

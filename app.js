@@ -1666,7 +1666,11 @@ const initEventHandlers = () => {
 
   // ---- Floating Add Button ----
   on('btn-add-book', 'click', () => {
-    ui.showAddBookModal();
+    router.navigate('search');
+    setTimeout(() => {
+      const input = document.getElementById('search-input');
+      if (input) input.focus();
+    }, 100);
   });
 
   on('btn-empty-search', 'click', () => {

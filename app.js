@@ -227,16 +227,19 @@ const firebaseSync = (() => {
     });
   };
 
-  const updateStatusUI = (connected) => {
+  const updateStatusUI = (connected, customMsg) => {
     const ind = document.getElementById('sync-indicator');
     const txt = document.getElementById('sync-status-text');
+    const statusBox = document.getElementById('sync-status');
     if (ind && txt) {
       if (connected) {
         ind.textContent = '🟢';
-        txt.textContent = `Connected & Synced (${getSyncKey()})`;
+        txt.textContent = customMsg || `Connected & Synced (${getSyncKey()})`;
+        if (statusBox) statusBox.style.color = 'var(--accent-secondary)';
       } else {
         ind.textContent = '🟡';
         txt.textContent = 'Offline (local storage only)';
+        if (statusBox) statusBox.style.color = 'var(--text-secondary)';
       }
     }
   };
@@ -1653,9 +1656,29 @@ const initEventHandlers = () => {
     btnSaveSyncKey.addEventListener('click', () => {
       const input = document.getElementById('setting-sync-key');
       if (input && input.value.trim()) {
+        btnSaveSyncKey.disabled = true;
+        btnSaveSyncKey.innerHTML = '⏳ Connecting...';
+
         const cleanKey = firebaseSync.setSyncKey(input.value);
         input.value = cleanKey;
-        toast.show(`Connected to sync key "${cleanKey}"`, 'success');
+
+        setTimeout(() => {
+          btnSaveSyncKey.disabled = false;
+          btnSaveSyncKey.innerHTML = '✓ Connected!';
+          btnSaveSyncKey.style.backgroundColor = 'var(--status-finished)';
+          btnSaveSyncKey.style.borderColor = 'var(--status-finished)';
+
+          toast.show(`Successfully synced to key "${cleanKey}"!`, 'success');
+          firebaseSync.updateStatusUI(true, `Connected & Synced (${cleanKey})`);
+
+          setTimeout(() => {
+            btnSaveSyncKey.innerHTML = 'Connect';
+            btnSaveSyncKey.style.backgroundColor = '';
+            btnSaveSyncKey.style.borderColor = '';
+          }, 2500);
+        }, 300);
+      } else {
+        toast.show('Please enter a sync passphrase', 'error');
       }
     });
   }

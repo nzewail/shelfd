@@ -1621,9 +1621,9 @@ const initEventHandlers = () => {
 
   // ---- Search Results Click ----
   document.getElementById('search-results').addEventListener('click', (e) => {
-    const card = e.target.closest('.search-result-card');
-    if (card) {
-      const idx = parseInt(card.dataset.resultIndex, 10);
+    const item = e.target.closest('.search-result-item');
+    if (item) {
+      const idx = parseInt(item.dataset.searchIndex, 10);
       const result = lastSearchResults[idx];
       if (result) ui.showAddBookModal(result);
     }

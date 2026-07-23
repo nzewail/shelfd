@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shelfd-v19';
+const CACHE_NAME = 'shelfd-v20';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

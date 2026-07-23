@@ -261,10 +261,10 @@
               <span class="settings-title">Sync Passphrase</span>
               <span class="settings-desc">Enter the same passphrase on all your devices to keep your library synced in real time.</span>
             </div>
-            <div style="display:flex;gap:var(--space-2);">
-              <input type="text" id="setting-sync-key" class="input-field" placeholder="e.g. nabeel-reading" style="flex:1;">
-              <button id="btn-save-sync-key" class="btn btn-primary">Connect</button>
-            </div>
+            <form id="sync-key-form" style="display:flex;gap:var(--space-2);width:100%;">
+              <input type="text" id="setting-sync-key" class="input-field" placeholder="e.g. nabeel-reading" style="flex:1;" autocomplete="off">
+              <button type="submit" id="btn-save-sync-key" class="btn btn-primary">Connect</button>
+            </form>
             <div id="sync-status" style="font-size:var(--text-xs);color:var(--text-secondary);display:flex;align-items:center;gap:var(--space-2);">
               <span id="sync-indicator">🟢</span> <span id="sync-status-text">Connected & Synced</span>
             </div>
@@ -315,6 +315,9 @@
       </div>
     </section>
 
+    <!-- ===== Floating Add Button ===== -->
+    <button id="btn-add-book" class="fab" aria-label="Add a book" title="Add a book">+</button>
+
     <!-- ===== Bottom Navigation ===== -->
     <nav id="nav" class="nav-bar">
       <button class="nav-item nav-tab active" data-view="library" aria-label="Library">
@@ -351,6 +354,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <!-- App Script -->
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

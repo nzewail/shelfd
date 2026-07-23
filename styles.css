@@ -1891,3 +1891,34 @@ input:checked + .toggle-slider:before {
   border-color: var(--accent-primary);
 }
 
+/* Floating Action Button */
+.fab {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 24px);
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: white;
+  font-size: 28px;
+  font-weight: 300;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 90;
+}
+
+.fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+

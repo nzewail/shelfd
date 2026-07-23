@@ -32,7 +32,7 @@ const bookStore = (() => {
 
   const saveData = (data) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    if (window.firebaseSync) {
+    if (typeof firebaseSync !== 'undefined') {
       firebaseSync.pushLocalData();
     }
   };
@@ -109,7 +109,7 @@ const bookStore = (() => {
 
     clearAll: () => {
       localStorage.removeItem(STORAGE_KEY);
-      if (window.firebaseSync) {
+      if (typeof firebaseSync !== 'undefined') {
         firebaseSync.pushLocalData();
       }
     },
@@ -149,6 +149,7 @@ const firebaseSync = (() => {
     const clean = sanitizeSyncKey(key);
     localStorage.setItem('shelfd_sync_key', clean);
     connect(clean);
+    setTimeout(() => pushLocalData(), 100);
     return clean;
   };
 
@@ -161,10 +162,19 @@ const firebaseSync = (() => {
         db = firebase.database();
         const syncKey = getSyncKey();
         connect(syncKey);
+      } else {
+        console.warn('Firebase SDK script not loaded');
       }
     } catch (e) {
       console.warn('Firebase init warning:', e);
     }
+  };
+
+  const normalizeBooksArray = (rawBooks) => {
+    if (!rawBooks) return [];
+    if (Array.isArray(rawBooks)) return rawBooks.filter(Boolean);
+    if (typeof rawBooks === 'object') return Object.values(rawBooks).filter(Boolean);
+    return [];
   };
 
   const connect = (syncKey) => {
@@ -179,23 +189,22 @@ const firebaseSync = (() => {
     // Real-time listener for multi-device sync
     currentSyncRef.on('value', (snapshot) => {
       const val = snapshot.val();
-      if (val && Array.isArray(val.books)) {
+      if (val && val.books !== undefined) {
+        const booksArray = normalizeBooksArray(val.books);
         const localData = bookStore.getData();
-        if (JSON.stringify(localData.books) !== JSON.stringify(val.books)) {
-          isInternalOperation = true;
-          bookStore.saveData({
-            books: val.books,
-            settings: { ...localData.settings, ...(val.settings || {}) }
-          });
-          isInternalOperation = false;
+        isInternalOperation = true;
+        bookStore.saveData({
+          books: booksArray,
+          settings: { ...localData.settings, ...(val.settings || {}) }
+        });
+        isInternalOperation = false;
 
-          // Re-render active view
-          if (window.router) {
-            const view = router.getCurrent();
-            if (view === 'library') ui.renderLibrary();
-            if (view === 'stats') ui.renderStats();
-            if (view === 'settings') ui.renderSettings();
-          }
+        // Re-render active view
+        if (typeof router !== 'undefined') {
+          const view = router.getCurrent();
+          if (view === 'library') ui.renderLibrary();
+          if (view === 'stats') ui.renderStats();
+          if (view === 'settings') ui.renderSettings();
         }
       } else if (!val) {
         // First time initialization for new sync key: push current local data to cloud
@@ -203,7 +212,10 @@ const firebaseSync = (() => {
       }
       updateStatusUI(true);
     }, (error) => {
-      console.warn('Firebase sync error:', error);
+      console.error('Firebase sync error:', error);
+      if (error && error.code === 'PERMISSION_DENIED') {
+        if (typeof toast !== 'undefined') toast.show('Firebase Error: Permission Denied. Check Database Rules in Firebase Console.', 'error');
+      }
       updateStatusUI(false);
     });
   };
@@ -218,12 +230,15 @@ const firebaseSync = (() => {
       settings: data.settings,
       lastUpdated: new Date().toISOString()
     }).then(() => {
-      isInternalOperation = false;
       updateStatusUI(true);
     }).catch(err => {
-      isInternalOperation = false;
-      console.warn('Firebase push failed:', err);
+      console.error('Firebase push failed:', err);
+      if (err && err.code === 'PERMISSION_DENIED') {
+        if (typeof toast !== 'undefined') toast.show('Firebase Error: Permission Denied. Update Database Rules in Firebase Console.', 'error');
+      }
       updateStatusUI(false);
+    }).finally(() => {
+      isInternalOperation = false;
     });
   };
 
@@ -582,7 +597,7 @@ const ui = (() => {
       const gridClass = `book-grid ${currentViewMode !== 'standard' ? currentViewMode : ''}`;
 
       const sectionsHtml = statuses.map(s => {
-        const statusBooks = sortBooks(books.filter(b => b.status === s.key), currentSort);
+        const statusBooks = sortBooks(books.filter(b => (b.status || 'want-to-read') === s.key), currentSort);
         if (statusBooks.length === 0) return '';
         const isCollapsed = collapsedSections.includes(s.key);
 
@@ -599,8 +614,16 @@ const ui = (() => {
         `;
       }).join('');
 
-      grid.className = 'library-sections-container';
-      grid.innerHTML = sectionsHtml;
+      if (!sectionsHtml.trim()) {
+        grid.className = 'book-grid';
+        if (currentViewMode === 'compact') grid.classList.add('compact');
+        if (currentViewMode === 'large') grid.classList.add('large');
+        if (currentViewMode === 'list') grid.classList.add('list');
+        grid.innerHTML = sortBooks(books, currentSort).map(book => renderBookCard(book)).join('');
+      } else {
+        grid.className = 'library-sections-container';
+        grid.innerHTML = sectionsHtml;
+      }
 
       // Add collapse click listeners
       grid.querySelectorAll('.library-section-title').forEach(title => {
@@ -1486,7 +1509,7 @@ const ui = (() => {
     if (yearlyGoalInput) yearlyGoalInput.value = settings.yearlyGoal || 12;
 
     const syncKeyInput = document.getElementById('setting-sync-key');
-    if (syncKeyInput && window.firebaseSync) {
+    if (syncKeyInput && typeof firebaseSync !== 'undefined') {
       syncKeyInput.value = firebaseSync.getSyncKey();
       firebaseSync.updateStatusUI(true);
     }
@@ -1521,14 +1544,21 @@ const ui = (() => {
 // 7. EVENT HANDLERS
 // ============================================================================
 const initEventHandlers = () => {
+  // Null-safe helper to bind events
+  const on = (id, event, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, handler);
+    else console.warn(`[initEventHandlers] Element #${id} not found`);
+  };
+
   // ---- Navigation ----
-  document.getElementById('nav').addEventListener('click', (e) => {
+  on('nav', 'click', (e) => {
     const tab = e.target.closest('.nav-tab');
     if (tab) router.navigate(tab.dataset.view);
   });
 
   // ---- Filter Bar ----
-  document.getElementById('filter-bar').addEventListener('click', (e) => {
+  on('filter-bar', 'click', (e) => {
     const pill = e.target.closest('.filter-pill');
     if (pill) ui.setFilter(pill.dataset.filter);
   });
@@ -1542,7 +1572,7 @@ const initEventHandlers = () => {
     });
   }
 
-  document.getElementById('view-dropdown').addEventListener('click', (e) => {
+  on('view-dropdown', 'click', (e) => {
     const option = e.target.closest('.sort-option');
     if (option) {
       ui.setViewMode(option.dataset.viewMode);
@@ -1551,12 +1581,12 @@ const initEventHandlers = () => {
   });
 
   // ---- Sort Dropdown ----
-  document.getElementById('btn-sort').addEventListener('click', () => {
+  on('btn-sort', 'click', () => {
     document.getElementById('view-dropdown').classList.add('hidden');
     document.getElementById('sort-dropdown').classList.toggle('hidden');
   });
 
-  document.getElementById('sort-dropdown').addEventListener('click', (e) => {
+  on('sort-dropdown', 'click', (e) => {
     const option = e.target.closest('.sort-option');
     if (option) {
       document.querySelectorAll('.sort-option').forEach(o => o.classList.remove('active'));
@@ -1568,16 +1598,18 @@ const initEventHandlers = () => {
 
   // Close dropdowns on outside click
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('#btn-sort') && !e.target.closest('#sort-dropdown')) {
-      document.getElementById('sort-dropdown').classList.add('hidden');
+    const sortDD = document.getElementById('sort-dropdown');
+    const viewDD = document.getElementById('view-dropdown');
+    if (sortDD && !e.target.closest('#btn-sort') && !e.target.closest('#sort-dropdown')) {
+      sortDD.classList.add('hidden');
     }
-    if (!e.target.closest('#btn-view-mode') && !e.target.closest('#view-dropdown')) {
-      document.getElementById('view-dropdown').classList.add('hidden');
+    if (viewDD && !e.target.closest('#btn-view-mode') && !e.target.closest('#view-dropdown')) {
+      viewDD.classList.add('hidden');
     }
   });
 
   // ---- Book Card Clicks ----
-  document.getElementById('book-grid').addEventListener('click', (e) => {
+  on('book-grid', 'click', (e) => {
     const card = e.target.closest('.book-card');
     if (card) ui.showBookDetail(card.dataset.bookId);
   });
@@ -1623,7 +1655,7 @@ const initEventHandlers = () => {
   }
 
   // ---- Search Results Click ----
-  document.getElementById('search-results').addEventListener('click', (e) => {
+  on('search-results', 'click', (e) => {
     const item = e.target.closest('.search-result-item');
     if (item) {
       const idx = parseInt(item.dataset.searchIndex, 10);
@@ -1633,16 +1665,16 @@ const initEventHandlers = () => {
   });
 
   // ---- Floating Add Button ----
-  document.getElementById('btn-add-book').addEventListener('click', () => {
+  on('btn-add-book', 'click', () => {
     ui.showAddBookModal();
   });
 
-  document.getElementById('btn-empty-search').addEventListener('click', () => {
+  on('btn-empty-search', 'click', () => {
     router.navigate('search');
   });
 
   // ---- Settings Handlers ----
-  document.getElementById('setting-yearly-goal').addEventListener('change', (e) => {
+  on('setting-yearly-goal', 'change', (e) => {
     const val = parseInt(e.target.value, 10);
     if (val > 0) {
       bookStore.updateSettings({ yearlyGoal: val });
@@ -1650,32 +1682,42 @@ const initEventHandlers = () => {
     }
   });
 
-  // ---- Sync Passphrase Save ----
-  const btnSaveSyncKey = document.getElementById('btn-save-sync-key');
-  if (btnSaveSyncKey) {
-    btnSaveSyncKey.addEventListener('click', () => {
-      const input = document.getElementById('setting-sync-key');
-      if (input && input.value.trim()) {
-        const cleanKey = firebaseSync.setSyncKey(input.value);
-        input.value = cleanKey;
+  // ---- Sync Passphrase Save Form ----
+  const handleSyncSubmit = (e) => {
+    if (e) e.preventDefault();
+    const input = document.getElementById('setting-sync-key');
+    const btn = document.getElementById('btn-save-sync-key');
+    if (input && input.value.trim()) {
+      const cleanKey = firebaseSync.setSyncKey(input.value);
+      input.value = cleanKey;
 
-        // Instant visual feedback
-        btnSaveSyncKey.classList.add('btn-success');
-        btnSaveSyncKey.innerHTML = '✓ Connected!';
-        toast.show(`Successfully synced to key "${cleanKey}"!`, 'success');
-        firebaseSync.updateStatusUI(true, `Connected & Synced (${cleanKey})`);
-
+      if (btn) {
+        btn.classList.add('btn-success');
+        btn.innerHTML = '✓ Connected!';
         setTimeout(() => {
-          btnSaveSyncKey.classList.remove('btn-success');
-          btnSaveSyncKey.innerHTML = 'Connect';
+          btn.classList.remove('btn-success');
+          btn.innerHTML = 'Connect';
         }, 2500);
-      } else {
-        toast.show('Please enter a sync passphrase', 'error');
       }
-    });
+
+      toast.show(`Successfully synced to key "${cleanKey}"!`, 'success');
+      firebaseSync.updateStatusUI(true, `Connected & Synced (${cleanKey})`);
+    } else {
+      toast.show('Please enter a sync passphrase', 'error');
+    }
+  };
+
+  const syncKeyForm = document.getElementById('sync-key-form');
+  if (syncKeyForm) {
+    syncKeyForm.addEventListener('submit', handleSyncSubmit);
   }
 
-  document.getElementById('btn-export').addEventListener('click', () => {
+  const btnSaveSyncKey = document.getElementById('btn-save-sync-key');
+  if (btnSaveSyncKey) {
+    btnSaveSyncKey.addEventListener('click', handleSyncSubmit);
+  }
+
+  on('btn-export', 'click', () => {
     const jsonStr = bookStore.exportData();
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1687,11 +1729,11 @@ const initEventHandlers = () => {
     toast.show('Library exported successfully', 'success');
   });
 
-  document.getElementById('btn-import').addEventListener('click', () => {
+  on('btn-import', 'click', () => {
     document.getElementById('import-file-input').click();
   });
 
-  document.getElementById('import-file-input').addEventListener('change', (e) => {
+  on('import-file-input', 'change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -1709,7 +1751,7 @@ const initEventHandlers = () => {
     e.target.value = ''; // Reset file input
   });
 
-  document.getElementById('btn-clear-data').addEventListener('click', () => {
+  on('btn-clear-data', 'click', () => {
     ui.showConfirmModal(
       'Clear All Data?',
       'This will permanently delete all your books and settings. This cannot be undone.',
@@ -1733,6 +1775,20 @@ const initEventHandlers = () => {
 // ============================================================================
 const registerServiceWorker = async () => {
   if ('serviceWorker' in navigator) {
+    // On localhost, unregister service workers to avoid stale cache during dev
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.unregister();
+      }
+      // Clear all caches
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) {
+        await caches.delete(name);
+      }
+      console.log('[SW] Unregistered service workers and cleared caches for localhost');
+      return;
+    }
     try {
       await navigator.serviceWorker.register('./sw.js');
     } catch (err) {
@@ -1747,6 +1803,6 @@ const registerServiceWorker = async () => {
 document.addEventListener('DOMContentLoaded', () => {
   initEventHandlers();
   router.init();
-  if (window.firebaseSync) firebaseSync.init();
+  if (typeof firebaseSync !== 'undefined') firebaseSync.init();
   registerServiceWorker();
 });

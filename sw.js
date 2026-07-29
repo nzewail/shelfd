@@ -1,11 +1,11 @@
-const CACHE_NAME = 'shelfd-v25';
+const CACHE_NAME = 'shelfd-v26';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/icon.svg',
-  '/manifest.json'
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './icon.svg',
+  './manifest.json'
 ];
 
 // Install: cache static assets

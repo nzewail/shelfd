@@ -410,7 +410,7 @@ const router = (() => {
 
     // Render the view
     if (view === 'library') ui.renderLibrary();
-    if (view === 'stats') ui.renderStats();
+    if (view === 'stats') { ui.setStatsYear(new Date().getFullYear()); }
     if (view === 'settings') ui.renderSettings();
   };
 
@@ -428,6 +428,8 @@ const router = (() => {
 const ui = (() => {
   let currentFilter = 'all';
   let currentSort = 'dateAdded-desc';
+  let selectedStatsYear = new Date().getFullYear();
+  let lastAvailableYears = [selectedStatsYear];
 
   // Preset genre list
   const GENRE_PRESETS = [
@@ -548,10 +550,11 @@ const ui = (() => {
     'ebook': '📱'
   };
 
-  const viewModes = ['standard', 'compact', 'large', 'list'];
-  const viewModeIcons = { standard: '⊞', compact: '⣿', large: '🖼️', list: '☰' };
-  const viewModeLabels = { standard: 'Standard Grid', compact: 'Compact Grid', large: 'Large Grid', list: 'List View' };
-  let currentViewMode = localStorage.getItem('shelfd_view_mode') || 'standard';
+  const viewModes = ['grid', 'list'];
+  const viewModeIcons = { grid: '⣿', list: '☰' };
+  const viewModeLabels = { grid: 'Standard', list: 'List View' };
+  let currentViewMode = localStorage.getItem('shelfd_view_mode') || 'grid';
+  if (!viewModes.includes(currentViewMode)) currentViewMode = 'grid';
 
   // ---- Library Rendering ----
   const renderLibrary = () => {
@@ -564,8 +567,6 @@ const ui = (() => {
     if (iconEl) iconEl.textContent = viewModeIcons[currentViewMode];
     if (grid) {
       grid.className = 'book-grid';
-      if (currentViewMode === 'compact') grid.classList.add('compact');
-      if (currentViewMode === 'large') grid.classList.add('large');
       if (currentViewMode === 'list') grid.classList.add('list');
     }
 
@@ -616,8 +617,6 @@ const ui = (() => {
 
       if (!sectionsHtml.trim()) {
         grid.className = 'book-grid';
-        if (currentViewMode === 'compact') grid.classList.add('compact');
-        if (currentViewMode === 'large') grid.classList.add('large');
         if (currentViewMode === 'list') grid.classList.add('list');
         grid.innerHTML = sortBooks(books, currentSort).map(book => renderBookCard(book)).join('');
       } else {
@@ -656,8 +655,6 @@ const ui = (() => {
         grid.classList.remove('hidden');
         emptyState.classList.add('hidden');
         grid.className = 'book-grid';
-        if (currentViewMode === 'compact') grid.classList.add('compact');
-        if (currentViewMode === 'large') grid.classList.add('large');
         if (currentViewMode === 'list') grid.classList.add('list');
         grid.innerHTML = filtered.map(book => renderBookCard(book)).join('');
       }
@@ -1146,8 +1143,10 @@ const ui = (() => {
     const books = bookStore.getBooks();
     const settings = bookStore.getSettings();
     const now = new Date();
-    const currentYear = now.getFullYear();
+    const actualYear = now.getFullYear();
     const currentMonth = now.getMonth();
+    const viewingYear = selectedStatsYear;
+    const isCurrentYear = viewingYear === actualYear;
 
     const statsEmpty = document.getElementById('stats-empty');
     const statsGoal = document.getElementById('stats-goal');
@@ -1166,20 +1165,43 @@ const ui = (() => {
     statsGrid.classList.remove('hidden');
     document.querySelectorAll('.stats-section').forEach(el => el.classList.remove('hidden'));
 
-    // Calculate stats - exclude 'want-to-read' books from reading stats
-    const trackedBooks = books.filter(b => b.status !== 'want-to-read');
+    // Calculate stats scoped to the selected year
     const finished = books.filter(b => b.status === 'finished');
-    const finishedThisYear = finished.filter(b => b.dateFinished && new Date(b.dateFinished).getFullYear() === currentYear);
-    const finishedThisMonth = finishedThisYear.filter(b => new Date(b.dateFinished).getMonth() === currentMonth);
 
-    const totalPages = finished.reduce((sum, b) => sum + (b.pageCount || 0), 0);
+    // Build sorted list of years that have finished books, always including current year
+    const yearsWithBooks = new Set(finished
+      .filter(b => b.dateFinished)
+      .map(b => new Date(b.dateFinished).getFullYear()));
+    yearsWithBooks.add(actualYear);
+    const availableYears = [...yearsWithBooks].sort((a, b) => a - b);
+    // Store for navigation handlers
+    lastAvailableYears = availableYears;
+
+    // Clamp selectedStatsYear to an available year if it's not in the list
+    if (!availableYears.includes(viewingYear)) {
+      selectedStatsYear = actualYear;
+    }
+    const effectiveYear = selectedStatsYear;
+
+    const finishedThisYear = finished.filter(b => b.dateFinished && new Date(b.dateFinished).getFullYear() === effectiveYear);
+    const finishedThisMonth = isCurrentYear
+      ? finishedThisYear.filter(b => new Date(b.dateFinished).getMonth() === currentMonth)
+      : [];
+
+    // Year-scoped pages: finished pages for this year + (if current year) in-progress & DNF pages
+    const yearFinishedPages = finishedThisYear.reduce((sum, b) => sum + (b.pageCount || 0), 0);
     const readingBooks = books.filter(b => b.status === 'reading');
-    const readingPages = readingBooks.reduce((sum, b) => sum + (b.pagesRead || 0), 0);
+    const readingPages = isCurrentYear ? readingBooks.reduce((sum, b) => sum + (b.pagesRead || 0), 0) : 0;
     const dnfBooks = books.filter(b => b.status === 'dnf');
-    const dnfPages = dnfBooks.reduce((sum, b) => sum + (b.pagesRead || 0), 0);
+    const dnfBooksThisYear = dnfBooks.filter(b => {
+      // DNF books don't always have dateFinished; fall back to dateStarted for year filtering
+      const d = b.dateFinished || b.dateStarted;
+      return d && new Date(d).getFullYear() === viewingYear;
+    });
+    const dnfPages = dnfBooksThisYear.reduce((sum, b) => sum + (b.pagesRead || 0), 0);
 
-    // Average days to finish
-    const finishTimes = finished
+    // Average days to finish (for books finished this year)
+    const finishTimes = finishedThisYear
       .filter(b => b.dateStarted && b.dateFinished)
       .map(b => {
         const start = new Date(b.dateStarted);
@@ -1192,18 +1214,18 @@ const ui = (() => {
       ? Math.round(finishTimes.reduce((a, b) => a + b, 0) / finishTimes.length)
       : null;
 
-    // Ratings
-    const liked = books.filter(b => b.rating === 'liked').length;
-    const disliked = books.filter(b => b.rating === 'disliked').length;
+    // Ratings (for books finished this year)
+    const liked = finishedThisYear.filter(b => b.rating === 'liked').length;
+    const disliked = finishedThisYear.filter(b => b.rating === 'disliked').length;
 
-    // Update stat cards (Total Books counts Finished, Reading & DNF)
-    document.getElementById('stat-total-books').textContent = trackedBooks.length;
+    // Update stat cards — Total Books now shows books finished in selected year
+    document.getElementById('stat-total-books').textContent = finishedThisYear.length;
     document.getElementById('stat-year-books').textContent = finishedThisYear.length;
     document.getElementById('stat-month-books').textContent = finishedThisMonth.length;
-    document.getElementById('stat-total-pages').textContent = (totalPages + readingPages + dnfPages).toLocaleString();
+    document.getElementById('stat-total-pages').textContent = (yearFinishedPages + readingPages + dnfPages).toLocaleString();
     document.getElementById('stat-avg-days').textContent = avgDays !== null ? avgDays : '—';
     if (document.getElementById('stat-dnf-books')) {
-      document.getElementById('stat-dnf-books').textContent = dnfBooks.length;
+      document.getElementById('stat-dnf-books').textContent = dnfBooksThisYear.length;
     }
     document.getElementById('stat-liked').textContent = liked;
     document.getElementById('stat-disliked').textContent = disliked;
@@ -1234,23 +1256,30 @@ const ui = (() => {
       goalMsg.textContent = `${goalTotal - goalCount} more to go`;
     }
 
-    // Update year label
-    document.getElementById('stats-year-label').textContent = currentYear;
+    // Update year label to reflect selected year
+    document.getElementById('stats-year-label').textContent = effectiveYear;
+
+    // Disable prev/next buttons at boundaries of available years
+    const yearIdx = availableYears.indexOf(effectiveYear);
+    const prevBtn = document.getElementById('stats-year-prev');
+    const nextBtn = document.getElementById('stats-year-next');
+    if (prevBtn) prevBtn.disabled = yearIdx <= 0;
+    if (nextBtn) nextBtn.disabled = yearIdx >= availableYears.length - 1;
 
     // Render monthly chart
     renderMonthlyChart(finishedThisYear);
 
-    // Render format breakdown (only for touched books)
-    renderFormatBreakdown(trackedBooks);
+    // Render format breakdown (scoped to finished books this year)
+    renderFormatBreakdown(finishedThisYear);
 
-    // Render genre breakdown (only for touched books)
-    renderGenreBreakdown(trackedBooks);
+    // Render genre breakdown (scoped to finished books this year)
+    renderGenreBreakdown(finishedThisYear);
 
-    // Render page count breakdown (for finished books)
-    renderPageCountBreakdown(finished);
+    // Render page count breakdown (for finished books this year)
+    renderPageCountBreakdown(finishedThisYear);
 
     // Add interactive click listeners for stat cards & monthly bars
-    setupStatsInteractivity(finishedThisYear, finishedThisMonth, trackedBooks, dnfBooks);
+    setupStatsInteractivity(finishedThisYear, finishedThisMonth, finishedThisYear, dnfBooksThisYear);
   };
 
   const showBookListModal = (title, bookList) => {
@@ -1522,6 +1551,9 @@ const ui = (() => {
     showSearchLoading,
     resetSearchView,
     renderStats,
+    setStatsYear: (year) => { selectedStatsYear = year; renderStats(); },
+    getStatsYear: () => selectedStatsYear,
+    getAvailableYears: () => lastAvailableYears,
     renderSettings,
     showBookDetail,
     showAddBookModal,
@@ -1555,6 +1587,18 @@ const initEventHandlers = () => {
   on('nav', 'click', (e) => {
     const tab = e.target.closest('.nav-tab');
     if (tab) router.navigate(tab.dataset.view);
+  });
+
+  // ---- Stats Year Navigation (only cycle through years with books) ----
+  on('stats-year-prev', 'click', () => {
+    const years = ui.getAvailableYears();
+    const idx = years.indexOf(ui.getStatsYear());
+    if (idx > 0) ui.setStatsYear(years[idx - 1]);
+  });
+  on('stats-year-next', 'click', () => {
+    const years = ui.getAvailableYears();
+    const idx = years.indexOf(ui.getStatsYear());
+    if (idx < years.length - 1) ui.setStatsYear(years[idx + 1]);
   });
 
   // ---- Filter Bar ----

@@ -703,68 +703,30 @@ textarea.input-field {
   display: none !important;
 }
 
-/* Library Grid */
-/* Library Grid - Standard */
+/* Library Grid - Standard (compact layout) */
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: var(--space-3);
-}
-
-@media (min-width: 640px) {
-  .book-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-4);
-  }
-}
-
-@media (min-width: 1024px) {
-  .book-grid {
-    grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-  }
-}
-
-/* Compact Grid View */
-.book-grid.compact {
   grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
   gap: var(--space-2);
 }
 
-.book-grid.compact .book-info {
+.book-grid .book-info {
   padding: var(--space-2);
 }
 
-.book-grid.compact .book-title {
+.book-grid .book-title {
   font-size: 0.78rem;
   margin-bottom: 2px;
 }
 
-.book-grid.compact .book-author {
+.book-grid .book-author {
   font-size: 0.7rem;
   margin-bottom: 4px;
 }
 
-.book-grid.compact .badge {
+.book-grid .badge {
   padding: 1px 4px;
   font-size: 0.6rem;
-}
-
-/* Large Grid View */
-.book-grid.large {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: var(--space-5);
-}
-
-.book-grid.large .book-info {
-  padding: var(--space-4);
-}
-
-.book-grid.large .book-title {
-  font-size: 1.05rem;
-}
-
-.book-grid.large .book-author {
-  font-size: 0.875rem;
 }
 
 /* List View */

@@ -1218,8 +1218,9 @@ const ui = (() => {
     const liked = finishedThisYear.filter(b => b.rating === 'liked').length;
     const disliked = finishedThisYear.filter(b => b.rating === 'disliked').length;
 
-    // Update stat cards — Total Books now shows books finished in selected year
-    document.getElementById('stat-total-books').textContent = finishedThisYear.length;
+    // Update stat cards — Total Books shows finished + DNF + currently reading books in selected year
+    const readingBooksCount = isCurrentYear ? readingBooks.length : 0;
+    document.getElementById('stat-total-books').textContent = finishedThisYear.length + dnfBooksThisYear.length + readingBooksCount;
     document.getElementById('stat-year-books').textContent = finishedThisYear.length;
     document.getElementById('stat-month-books').textContent = finishedThisMonth.length;
     document.getElementById('stat-total-pages').textContent = (yearFinishedPages + readingPages + dnfPages).toLocaleString();
@@ -1279,7 +1280,8 @@ const ui = (() => {
     renderPageCountBreakdown(finishedThisYear);
 
     // Add interactive click listeners for stat cards & monthly bars
-    setupStatsInteractivity(finishedThisYear, finishedThisMonth, finishedThisYear, dnfBooksThisYear);
+    const totalBooksList = [...finishedThisYear, ...dnfBooksThisYear, ...(isCurrentYear ? readingBooks : [])];
+    setupStatsInteractivity(finishedThisYear, finishedThisMonth, totalBooksList, dnfBooksThisYear);
   };
 
   const showBookListModal = (title, bookList) => {

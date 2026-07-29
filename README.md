@@ -43,4 +43,5 @@ A sleek, privacy-focused Progressive Web Application (PWA) to track your reading
 
 ## 📄 License
 
-MIT License — feel free to fork, tinker, and customize!
+This project is licensed under the [MIT License](LICENSE) — feel free to fork, tinker, and customize!
+

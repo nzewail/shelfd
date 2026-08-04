@@ -104,8 +104,9 @@
 
       <!-- Search Loading -->
       <div id="search-loading" class="search-loading hidden">
-        <div class="spinner"></div>
-        <p>Searching books...</p>
+        <div class="skeleton-card"><div class="skeleton-cover"></div><div class="skeleton-info"><div class="skeleton-line" style="width:75%"></div><div class="skeleton-line" style="width:45%"></div></div></div>
+        <div class="skeleton-card"><div class="skeleton-cover"></div><div class="skeleton-info"><div class="skeleton-line" style="width:65%"></div><div class="skeleton-line" style="width:40%"></div></div></div>
+        <div class="skeleton-card"><div class="skeleton-cover"></div><div class="skeleton-info"><div class="skeleton-line" style="width:80%"></div><div class="skeleton-line" style="width:50%"></div></div></div>
       </div>
 
       <!-- Search Empty State -->
@@ -120,6 +121,14 @@
         <div class="empty-icon">😔</div>
         <h3 class="empty-title">No books found</h3>
         <p class="empty-text">Try a different search term</p>
+      </div>
+
+      <!-- Search Error State -->
+      <div id="search-error" class="empty-state hidden">
+        <div class="empty-icon">⚠️</div>
+        <h3 class="empty-title">Search Failed</h3>
+        <p class="empty-text" id="search-error-message">Could not connect to book service</p>
+        <button id="btn-search-retry" class="btn btn-secondary" style="margin-top:var(--space-3)">Retry Search</button>
       </div>
     </section>
 

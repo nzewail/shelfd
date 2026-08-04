@@ -5,6 +5,17 @@
 
 'use strict';
 
+// Utility helper for safe HTML string interpolation
+const escapeHtml = (str) => {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 // ============================================================================
 // 1. STORAGE MODULE
 // ============================================================================
@@ -269,46 +280,127 @@ const firebaseSync = (() => {
 })();
 
 // ============================================================================
-// 2. API MODULE (Open Library)
+// 2. API MODULE (Single Search API: Apple Books)
 // ============================================================================
 const bookAPI = (() => {
-  const SEARCH_URL = 'https://openlibrary.org/search.json';
-  const COVER_URL = 'https://covers.openlibrary.org/b/id';
+  const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
+  const searchCache = new Map();
+  const MAX_CACHE_SIZE = 100;
+  let activeAbortController = null;
 
-  const getCoverUrl = (coverId, size = 'M') => {
-    if (!coverId) return '';
-    return `${COVER_URL}/${coverId}-${size}.jpg`;
+  const mapITunesItem = (item) => {
+    let coverUrl = item.artworkUrl100 || item.artworkUrl60 || '';
+    if (coverUrl) {
+      coverUrl = coverUrl.replace('100x100bb', '300x300bb').replace('60x60bb', '300x300bb');
+    }
+    let coverUrlLarge = item.artworkUrl100 || '';
+    if (coverUrlLarge) {
+      coverUrlLarge = coverUrlLarge.replace('100x100bb', '600x600bb').replace('60x60bb', '600x600bb');
+    }
+
+    let publishYear = null;
+    if (item.releaseDate) {
+      publishYear = parseInt(item.releaseDate.substring(0, 4), 10);
+    }
+
+    const genre = item.primaryGenreName || (item.genres && item.genres.length > 0 ? item.genres[0] : null);
+
+    return {
+      title: item.trackName || item.collectionName || 'Untitled',
+      author: item.artistName || 'Unknown Author',
+      coverUrl: coverUrl,
+      coverUrlLarge: coverUrlLarge || coverUrl,
+      pageCount: 0,
+      genre: genre,
+      isbn: null,
+      olKey: item.trackId ? `IT:${item.trackId}` : null,
+      firstPublishYear: publishYear
+    };
   };
 
-  const mapSearchResult = (doc) => ({
-    title: doc.title || 'Untitled',
-    author: doc.author_name ? doc.author_name[0] : 'Unknown Author',
-    coverUrl: getCoverUrl(doc.cover_i, 'M'),
-    coverUrlLarge: getCoverUrl(doc.cover_i, 'L'),
-    pageCount: doc.number_of_pages_median || 0,
-    isbn: doc.isbn ? doc.isbn[0] : null,
-    olKey: doc.key || null,
-    firstPublishYear: doc.first_publish_year || null
-  });
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 6000) => {
+    const controller = new AbortController();
+    let isTimedOut = false;
+    const timeoutId = setTimeout(() => {
+      isTimedOut = true;
+      controller.abort();
+    }, timeoutMs);
 
-  let abortController = null;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new DOMException('User aborted request', 'AbortError');
+      }
+      options.signal.addEventListener('abort', () => controller.abort());
+    }
+
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (isTimedOut) {
+        const timeoutErr = new Error(`Request timed out after ${timeoutMs}ms`);
+        timeoutErr.name = 'TimeoutError';
+        throw timeoutErr;
+      }
+      if (options.signal && options.signal.aborted) {
+        const abortErr = new DOMException('User aborted request', 'AbortError');
+        throw abortErr;
+      }
+      throw err;
+    }
+  };
 
   return {
     searchBooks: async (query) => {
-      if (abortController) abortController.abort();
-      abortController = new AbortController();
+      const normalizedQuery = query.trim().toLowerCase();
+      if (!normalizedQuery) return [];
 
-      const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=20&fields=key,title,author_name,cover_i,isbn,number_of_pages_median,first_publish_year,subject`;
+      if (searchCache.has(normalizedQuery)) {
+        return searchCache.get(normalizedQuery);
+      }
 
-      const response = await fetch(url, { signal: abortController.signal });
-      if (!response.ok) throw new Error('Search failed');
+      if (activeAbortController) {
+        activeAbortController.abort();
+      }
+      activeAbortController = new AbortController();
+      const signal = activeAbortController.signal;
 
-      const data = await response.json();
-      return (data.docs || []).map(mapSearchResult);
+      const url = `${ITUNES_SEARCH_URL}?term=${encodeURIComponent(normalizedQuery)}&entity=ebook&limit=20`;
+      const response = await fetchWithTimeout(url, { signal }, 6000);
+      if (!response.ok) {
+        throw new Error(`Search HTTP ${response.status}`);
+      }
+
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Search returned non-JSON response');
+      }
+
+      const results = (data.results || []).map(mapITunesItem);
+
+      if (results.length > 0) {
+        if (searchCache.size >= MAX_CACHE_SIZE) {
+          const firstKey = searchCache.keys().next().value;
+          searchCache.delete(firstKey);
+        }
+        searchCache.set(normalizedQuery, results);
+      }
+
+      return results;
     },
 
-    getCoverUrl,
-    cancelSearch: () => { if (abortController) abortController.abort(); }
+    getCoverUrl: (coverId) => coverId || '',
+    hasCached: (query) => searchCache.has(query.trim().toLowerCase()),
+    getCached: (query) => searchCache.get(query.trim().toLowerCase()) || [],
+    cancelSearch: () => {
+      if (activeAbortController) activeAbortController.abort();
+    }
   };
 })();
 
@@ -715,10 +807,12 @@ const ui = (() => {
     const empty = document.getElementById('search-empty');
     const noResults = document.getElementById('search-no-results');
     const loading = document.getElementById('search-loading');
+    const errorEl = document.getElementById('search-error');
 
     loading.classList.add('hidden');
+    if (errorEl) errorEl.classList.add('hidden');
 
-    if (results.length === 0) {
+    if (!results || results.length === 0) {
       container.innerHTML = '';
       container.classList.add('hidden');
       empty.classList.add('hidden');
@@ -732,17 +826,21 @@ const ui = (() => {
 
     container.innerHTML = results.map((book, i) => {
       const coverHtml = book.coverUrl
-        ? `<img src="${book.coverUrl}" alt="${book.title}" class="search-result-cover" loading="lazy">`
+        ? `<img src="${escapeHtml(book.coverUrl)}" alt="${escapeHtml(book.title)}" class="search-result-cover" loading="lazy">`
         : `<div class="search-result-cover" style="display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--text-tertiary);">📖</div>`;
+
+      const metaParts = [];
+      if (book.genre) metaParts.push(escapeHtml(book.genre));
+      if (book.firstPublishYear) metaParts.push(escapeHtml(book.firstPublishYear));
+      if (book.pageCount) metaParts.push(`${escapeHtml(book.pageCount)} pages`);
 
       return `
         <div class="search-result-item" data-search-index="${i}" role="button" tabindex="0">
           ${coverHtml}
           <div class="search-result-info">
-            <h4 class="search-result-title">${book.title}</h4>
-            <p class="book-author" style="margin-bottom:var(--space-1)">${book.author}</p>
-            ${book.firstPublishYear ? `<span class="text-xs text-tertiary">${book.firstPublishYear}</span>` : ''}
-            ${book.pageCount ? `<span class="text-xs text-tertiary">${book.pageCount} pages</span>` : ''}
+            <h4 class="search-result-title">${escapeHtml(book.title)}</h4>
+            <p class="book-author" style="margin-bottom:var(--space-1)">${escapeHtml(book.author)}</p>
+            ${metaParts.length > 0 ? `<span class="text-xs text-tertiary">${metaParts.join(' • ')}</span>` : ''}
           </div>
         </div>
       `;
@@ -754,13 +852,31 @@ const ui = (() => {
     document.getElementById('search-results').classList.add('hidden');
     document.getElementById('search-empty').classList.add('hidden');
     document.getElementById('search-no-results').classList.add('hidden');
+    const errorEl = document.getElementById('search-error');
+    if (errorEl) errorEl.classList.add('hidden');
+  };
+
+  const showSearchError = (msg = 'Could not search books. Please check your connection.') => {
+    document.getElementById('search-loading').classList.add('hidden');
+    document.getElementById('search-results').classList.add('hidden');
+    document.getElementById('search-empty').classList.add('hidden');
+    document.getElementById('search-no-results').classList.add('hidden');
+    const errorEl = document.getElementById('search-error');
+    if (errorEl) {
+      const msgEl = document.getElementById('search-error-message');
+      if (msgEl) msgEl.textContent = msg;
+      errorEl.classList.remove('hidden');
+    }
   };
 
   const resetSearchView = () => {
+    bookAPI.cancelSearch();
     document.getElementById('search-results').innerHTML = '';
     document.getElementById('search-results').classList.add('hidden');
     document.getElementById('search-loading').classList.add('hidden');
     document.getElementById('search-no-results').classList.add('hidden');
+    const errorEl = document.getElementById('search-error');
+    if (errorEl) errorEl.classList.add('hidden');
     document.getElementById('search-empty').classList.remove('hidden');
   };
 
@@ -1551,6 +1667,7 @@ const ui = (() => {
     renderLibrary,
     renderSearchResults,
     showSearchLoading,
+    showSearchError,
     resetSearchView,
     renderStats,
     setStatsYear: (year) => { selectedStatsYear = year; renderStats(); },
@@ -1674,20 +1791,33 @@ const initEventHandlers = () => {
 
       clearTimeout(searchTimeout);
       if (query.length < 2) {
+        bookAPI.cancelSearch();
         ui.resetSearchView();
         return;
       }
 
-      ui.showSearchLoading();
+      // 1. Instant Cache Hit (0ms UI latency)
+      if (bookAPI.hasCached(query)) {
+        lastSearchResults = bookAPI.getCached(query);
+        ui.renderSearchResults(lastSearchResults);
+        return;
+      }
+
+      // 2. Fast 180ms Debounce for network requests
       searchTimeout = setTimeout(async () => {
+        ui.showSearchLoading();
         try {
-          lastSearchResults = await bookAPI.searchBooks(query);
-          ui.renderSearchResults(lastSearchResults);
-        } catch {
-          toast.show('Failed to search books. Please check your connection.', 'error');
-          ui.resetSearchView();
+          const results = await bookAPI.searchBooks(query);
+          if (searchInput.value.trim() === query) {
+            lastSearchResults = results;
+            ui.renderSearchResults(lastSearchResults);
+          }
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error('Book search error:', err);
+          ui.showSearchError('Failed to fetch books. Check your connection or try again.');
         }
-      }, 400);
+      }, 180);
     });
   }
 
@@ -1699,6 +1829,12 @@ const initEventHandlers = () => {
       searchInput.focus();
     });
   }
+
+  on('btn-search-retry', 'click', () => {
+    if (searchInput && searchInput.value.trim()) {
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
 
   // ---- Search Results Click ----
   on('search-results', 'click', (e) => {
